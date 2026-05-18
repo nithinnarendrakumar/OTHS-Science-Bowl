@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Science Bowl — Calendar</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header>
+  <h1>Science Bowl</h1>
+  <span class="meta">Calendar</span>
+  <span class="spacer"></span>
+  <div id="coach-controls" class="hidden flex">
+    <button class="small" onclick="toggleAddEvent()">+ Add Meeting</button>
+  </div>
+  <a href="dashboard.html" class="btn small">← Dashboard</a>
+  <button class="small" onclick="signOut()">Logout</button>
+</header>
+
+<div class="page">
+
+  <!-- Add meeting form (coach only) -->
+  <div id="add-event-form" class="hidden section mt32" style="max-width:500px">
+    <div class="section-header"><h2>Schedule Meeting</h2></div>
+    <div class="section-body">
+      <div class="form-grid">
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="ev-date" />
+        </div>
+        <div class="field">
+          <label>Time (optional)</label>
+          <input type="time" id="ev-time" />
+        </div>
+        <div class="field field-full">
+          <label>Title</label>
+          <input type="text" id="ev-title" placeholder="e.g. Weekly Practice — Room 204" />
+        </div>
+        <div class="field field-full">
+          <label>Notes</label>
+          <textarea id="ev-notes" rows="2" placeholder="Location, format, what to prepare…"></textarea>
+        </div>
+      </div>
+      <div class="flex mt16">
+        <button class="primary" id="btn-add-event">Save</button>
+        <button class="small" onclick="toggleAddEvent()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Month nav -->
+  <div class="flex mt32" style="justify-content:space-between;align-items:center">
+    <button class="small" onclick="prevMonth()">← Prev</button>
+    <span id="cal-title" style="font-size:13px;font-weight:600;letter-spacing:1px"></span>
+    <button class="small" onclick="nextMonth()">Next →</button>
+  </div>
+
+  <!-- Calendar grid -->
+  <div style="margin-top:12px">
+    <div class="cal-grid" id="cal-header"></div>
+    <div class="cal-grid" id="cal-body"></div>
+  </div>
+
+  <!-- Upcoming list -->
+  <div class="section mt32">
+    <div class="section-header"><h2>Upcoming Meetings</h2></div>
+    <div class="section-body" style="padding-bottom:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Title / Notes</th><th>Status</th></tr></thead>
+          <tbody id="upcoming-list"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Discord integration notice -->
+  <div class="section">
+    <div class="section-header"><h2>Discord Sync</h2></div>
+    <div class="section-body">
+      <div class="alert info" id="discord-status">
+        Discord sync not configured. To automatically pull meeting dates from your Discord announcements channel,
+        provide a Discord bot token and channel ID to your site admin.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/calendar.js"></script>
+</body>
+</html>

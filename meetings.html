@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Science Bowl — Meetings</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .meeting-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
+    .stat-num { font-size: 20px; font-weight: 300; font-variant-numeric: tabular-nums; }
+    .subject-stat-row { display: flex; gap: 24px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .subject-stat-row:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Science Bowl — Meetings</h1>
+  <span class="spacer"></span>
+  <a href="coach.html" class="btn small">← Coach</a>
+  <button class="small" onclick="signOut()">Logout</button>
+</header>
+
+<div class="page">
+
+  <!-- ── LOG NEW MEETING ───────────────────────────── -->
+  <div class="section mt32">
+    <div class="section-header">
+      <h2>Log Meeting</h2>
+      <span class="spacer"></span>
+      <button class="small" onclick="toggleNewMeeting()">+ New Meeting</button>
+    </div>
+    <div id="new-meeting-form" class="hidden section-body">
+
+      <div class="form-grid" style="max-width:500px;margin-bottom:20px">
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="mtg-date" />
+        </div>
+        <div class="field field-full">
+          <label>Notes</label>
+          <textarea id="mtg-notes" placeholder="What you ran, themes, observations…"></textarea>
+        </div>
+      </div>
+
+      <!-- Attendance -->
+      <div style="margin-bottom:20px">
+        <p class="muted" style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Attendance</p>
+        <div id="attendance-checks" style="display:flex;gap:16px;flex-wrap:wrap"></div>
+      </div>
+
+      <!-- Toss-up stats per player -->
+      <div style="margin-bottom:20px">
+        <p class="muted" style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Toss-Up Performance</p>
+        <div id="tossup-grid" class="table-wrap">
+          <p class="muted" style="font-size:12px">Select attending students first.</p>
+        </div>
+      </div>
+
+      <!-- Rounds -->
+      <div style="margin-bottom:20px">
+        <div class="flex" style="margin-bottom:10px">
+          <p class="muted" style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Rounds</p>
+          <button type="button" class="small" onclick="addRoundRow()">+ Round</button>
+        </div>
+        <div id="round-rows" class="entry-list"></div>
+      </div>
+
+      <button class="primary" id="btn-save-meeting">Save Meeting</button>
+    </div>
+  </div>
+
+  <!-- ── MEETING HISTORY ───────────────────────────── -->
+  <div class="section">
+    <div class="section-header"><h2>History</h2></div>
+    <div class="section-body" style="padding-bottom:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Attendance</th>
+              <th>Rounds</th>
+              <th>Bonus %</th>
+              <th>Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="meeting-history"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MEETING DETAIL (expanded) ─────────────────── -->
+  <div id="meeting-detail" class="section hidden">
+    <div class="section-header">
+      <h2 id="detail-title">Meeting Detail</h2>
+      <span class="spacer"></span>
+      <button class="small" onclick="closeDetail()">Close</button>
+    </div>
+    <div class="section-body" id="detail-body"></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/meetings.js"></script>
+</body>
+</html>

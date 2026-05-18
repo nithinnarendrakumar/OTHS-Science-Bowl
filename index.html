@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Science Bowl</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-box">
+      <h1>Science Bowl</h1>
+
+      <div class="auth-tabs">
+        <div class="auth-tab active" id="tab-login"  onclick="switchTab('login')">Login</div>
+        <div class="auth-tab"        id="tab-signup" onclick="switchTab('signup')">Sign Up</div>
+      </div>
+
+      <div id="msg"></div>
+
+      <!-- Login -->
+      <form class="auth-form" id="form-login">
+        <div class="field">
+          <label>Full Name</label>
+          <input type="text" id="login-name" autocomplete="name" placeholder="" required />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="primary" id="btn-login">Login</button>
+      </form>
+
+      <!-- Sign Up -->
+      <form class="auth-form hidden" id="form-signup">
+        <div class="field">
+          <label>Full Name</label>
+          <input type="text" id="signup-name" placeholder="" required />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="signup-password" autocomplete="new-password" minlength="8" required />
+        </div>
+        <div class="field">
+          <label>Confirm Password</label>
+          <input type="password" id="signup-confirm" autocomplete="new-password" minlength="8" required />
+        </div>
+        <button type="submit" class="primary" id="btn-signup">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    // Redirect if already logged in
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        const { data: p } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
+        if (p) window.location.href = p.role === 'coach' ? 'coach.html' : 'dashboard.html';
+      }
+    })();
+
+    function switchTab(tab) {
+      document.getElementById('form-login').classList.toggle('hidden', tab !== 'login');
+      document.getElementById('form-signup').classList.toggle('hidden', tab !== 'signup');
+      document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+      document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
+      document.getElementById('msg').innerHTML = '';
+    }
+
+    function showMsg(text, type = 'error') {
+      document.getElementById('msg').innerHTML = `<div class="${type}-msg" style="margin-bottom:12px">${text}</div>`;
+    }
+
+    // Generate a stable internal email from name + random suffix
+    function makeAuthEmail(name) {
+      const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const rand = Math.random().toString(36).slice(2, 7);
+      return `${slug}_${rand}@scibowl.app`;
+    }
+
+    // ── Login: look up internal email by name, then auth ──
+    document.getElementById('form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-login');
+      btn.disabled = true; btn.textContent = 'Looking up…';
+
+      const name     = document.getElementById('login-name').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      // Profiles are publicly readable — fetch the internal email by name
+      const { data: matches, error: lookupErr } = await sb
+        .from('profiles')
+        .select('auth_email, role')
+        .ilike('full_name', name)
+        .limit(5);
+
+      if (lookupErr || !matches?.length) {
+        showMsg('Name not found. Check spelling or sign up.');
+        btn.disabled = false; btn.textContent = 'Login';
+        return;
+      }
+
+      // Try each match (handles near-duplicate names gracefully)
+      let loggedIn = false;
+      for (const row of matches) {
+        if (!row.auth_email) continue;
+        const { data, error } = await sb.auth.signInWithPassword({ email: row.auth_email, password });
+        if (!error && data.session) { loggedIn = true; break; }
+      }
+
+      if (!loggedIn) {
+        showMsg('Incorrect password.');
+        btn.disabled = false; btn.textContent = 'Login';
+        return;
+      }
+
+      const { data: { session } } = await sb.auth.getSession();
+      const { data: p } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
+      window.location.href = p?.role === 'coach' ? 'coach.html' : 'dashboard.html';
+    });
+
+    // ── Sign up: generate internal email, create user ──
+    document.getElementById('form-signup').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-signup');
+
+      const name    = document.getElementById('signup-name').value.trim();
+      const pass    = document.getElementById('signup-password').value;
+      const confirm = document.getElementById('signup-confirm').value;
+
+      if (pass !== confirm) { showMsg('Passwords do not match.'); return; }
+      if (!name) { showMsg('Enter your full name.'); return; }
+
+      btn.disabled = true; btn.textContent = 'Creating…';
+
+      // Check name isn't already taken
+      const { data: existing } = await sb.from('profiles').select('id').ilike('full_name', name).limit(1);
+      if (existing?.length) {
+        showMsg('That name is already registered.');
+        btn.disabled = false; btn.textContent = 'Create Account';
+        return;
+      }
+
+      const authEmail = makeAuthEmail(name);
+
+      const { error } = await sb.auth.signUp({
+        email: authEmail,
+        password: pass,
+        options: { data: { full_name: name } },
+      });
+
+      btn.disabled = false; btn.textContent = 'Create Account';
+
+      if (error) { showMsg(error.message); return; }
+
+      showMsg('Account created. Log in now.', 'success');
+      switchTab('login');
+      document.getElementById('login-name').value = name;
+    });
+  </script>
+</body>
+</html>

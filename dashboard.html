@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Science Bowl — Dashboard</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header>
+  <h1>Science Bowl</h1>
+  <span class="meta" id="hdr-name">–</span>
+  <span class="spacer"></span>
+  <span class="meta">Goal: <span id="goal-daily">–</span>/day · <span id="goal-weekly">–</span>/wk</span>
+  <a href="analytics.html" class="btn small">Analytics</a>
+  <a href="resources.html" class="btn small">Resources</a>
+  <a href="calendar.html" class="btn small">Calendar</a>
+  <a href="coach.html" class="btn small hidden" id="link-coach">Coach →</a>
+  <button class="small" onclick="signOut()">Logout</button>
+</header>
+
+<div class="page">
+
+  <div id="neglect-alerts" class="mt32"></div>
+
+  <!-- ── LOG TODAY ─────────────────────────────────── -->
+  <div class="section mt32">
+    <div class="section-header">
+      <h2>Log Today</h2>
+      <span class="muted" style="font-size:11px" id="hdr-date"></span>
+    </div>
+    <div class="section-body">
+      <form id="log-form">
+
+        <div class="form-grid" id="subject-fields"></div>
+
+        <hr />
+
+        <div style="margin-bottom:16px">
+          <div class="flex" style="margin-bottom:10px">
+            <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Reading</span>
+            <button type="button" class="small" onclick="addTbRow()">+ add</button>
+          </div>
+          <div id="tb-rows" class="entry-list"></div>
+        </div>
+
+        <hr />
+
+        <div style="margin-bottom:16px">
+          <div class="flex" style="margin-bottom:10px">
+            <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Practice Tests</span>
+            <button type="button" class="small" onclick="addPtRow()">+ add</button>
+          </div>
+          <div id="pt-rows" class="entry-list"></div>
+        </div>
+
+        <hr />
+
+        <div class="field field-full" style="margin-bottom:6px">
+          <label>Notes <span style="color:var(--crimson)">*</span> <span style="color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none;font-size:10px">— what you studied, specific topics covered, what was hard, what to revisit (min 80 chars)</span></label>
+          <textarea id="log-notes" rows="4" placeholder="e.g. Covered Hardy-Weinberg equilibrium — struggled with the math derivation, need to revisit allele frequency problems. Went through Campbell ch.23, pages 480-492. Anki: 45 cards on cell signaling…"></textarea>
+          <div class="char-count" id="notes-counter">0 / 80</div>
+        </div>
+
+        <button type="submit" class="primary" id="btn-submit">
+          <span id="submit-label">Save Log</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── STATS ─────────────────────────────────────── -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="label">Streak</div>
+      <div class="value gold" id="stat-streak">–</div>
+      <div class="sub">days</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">This Week</div>
+      <div class="value" id="stat-week">–</div>
+      <div class="sub">minutes</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Goal</div>
+      <div class="value" id="stat-goal-pct">–</div>
+      <div class="sub">of weekly target</div>
+    </div>
+  </div>
+
+  <!-- ── WEEKLY OVERVIEW ────────────────────────────── -->
+  <div class="section mt32">
+    <div class="section-header"><h2>This Week</h2></div>
+    <div class="section-body" style="padding-bottom:0">
+      <div class="table-wrap">
+        <table class="week-table">
+          <thead id="week-thead"></thead>
+          <tbody id="week-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MEETING PERFORMANCE ──────────────────────────── -->
+  <div class="section">
+    <div class="section-header"><h2>Meeting Performance</h2></div>
+    <div class="section-body" style="padding-bottom:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Subject</th><th class="right">Correct</th><th class="right">Negs</th><th class="right">Pts</th></tr></thead>
+          <tbody id="meeting-stats"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TEXTBOOK HISTORY ───────────────────────────── -->
+  <div class="section">
+    <div class="section-header"><h2>Reading — Last 30 Days</h2></div>
+    <div class="section-body" style="padding-bottom:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Subject</th><th>Textbook</th><th>Pages</th><th>pp.</th></tr></thead>
+          <tbody id="tb-history"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PRACTICE TEST HISTORY ─────────────────────── -->
+  <div class="section">
+    <div class="section-header"><h2>Practice Tests — Last 60 Days</h2></div>
+    <div class="section-body" style="padding-bottom:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Test</th><th>Subject</th><th>Score</th><th>%</th></tr></thead>
+          <tbody id="pt-history"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MY SUBJECTS ────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header"><h2>My Subjects</h2></div>
+    <div class="section-body">
+      <p class="muted" style="font-size:11px;margin-bottom:14px">Select the subjects you specialize in. Only these will appear in your daily log.</p>
+      <div class="subject-checks" id="my-subject-checks"></div>
+      <button class="primary" style="margin-top:16px" id="btn-save-subjects">Save Subjects</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  document.getElementById('hdr-date').textContent =
+    new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' });
+
+  // Notes character counter + validation
+  const notesEl  = document.getElementById('log-notes');
+  const counterEl = document.getElementById('notes-counter');
+  const MIN_NOTES = 80;
+  notesEl.addEventListener('input', () => {
+    const len = notesEl.value.length;
+    counterEl.textContent = `${len} / ${MIN_NOTES}`;
+    counterEl.className = 'char-count ' + (len >= MIN_NOTES ? 'ok' : len > 40 ? 'warn' : '');
+  });
+</script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>
