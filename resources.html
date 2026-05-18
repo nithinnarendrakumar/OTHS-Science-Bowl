@@ -28,7 +28,9 @@
       <button class="tab-btn" onclick="filterTab('math', this)">Math</button>
     </div>
 
-    <div class="resource-grid" id="resource-grid"></div>
+    <div class="resource-grid" id="resource-grid">
+      <p class="muted" style="font-size:12px;padding:16px 0">Loading…</p>
+    </div>
   </div>
 
 </div>
@@ -37,56 +39,35 @@
 <script src="js/config.js"></script>
 <script src="js/auth.js"></script>
 <script>
-const RESOURCES = [
-  // ── Biology ────────────────────────────────────────────────────────────
-  { subjects: ['bio'], type: 'Textbook', level: 'Intermediate', title: 'Campbell Biology', desc: 'Standard intermediate Bio text. Focus on molecular biology, genetics, ecology, and evolution.', url: 'https://www.pearson.com/en-us/subject-catalog/p/campbell-biology/P200000006972', label: 'Publisher page' },
-  { subjects: ['bio'], type: 'Textbook', level: 'Advanced', title: 'Principles of Biochemistry — Lehninger', desc: 'Definitive biochemistry reference. Essential for deep Bio/Chem crossover questions on metabolism, enzymes, and macromolecules.', url: 'https://www.macmillanlearning.com/college/us/product/Lehninger-Principles-of-Biochemistry/p/1319228003', label: 'Publisher page' },
-  { subjects: ['bio'], type: 'Textbook', level: 'Advanced', title: 'Molecular Biology of the Cell — Alberts', desc: 'Gold standard for cell biology. Covers cell signaling, gene expression, the cell cycle, and development in depth.', url: 'https://www.ncbi.nlm.nih.gov/books/NBK21054/', label: 'Open (free) →' },
-  { subjects: ['bio'], type: 'Textbook', level: 'Advanced', title: 'Human Physiology — Vander', desc: 'Comprehensive physiology. High-yield for organ systems, homeostasis, and neural/endocrine integration questions.', url: 'https://www.mheducation.com/highered/product/vanders-human-physiology-widmaier-raff/M9781260259209.html', label: 'Publisher page' },
-  { subjects: ['bio'], type: 'Textbook', level: 'Advanced', title: 'Biology of Plants — Raven', desc: 'Authoritative plant biology text. Covers plant structure, physiology, reproduction, and evolution.', url: 'https://www.macmillanlearning.com/college/us/product/Biology-of-Plants/p/1464190410', label: 'Publisher page' },
-
-  // ── Chemistry ──────────────────────────────────────────────────────────
-  { subjects: ['chem'], type: 'Textbook', level: 'Intermediate', title: 'Chemical Principles — Atkins', desc: 'Recommended intermediate chemistry text. Rigorous on thermodynamics, kinetics, quantum chemistry, and equilibrium.', url: 'https://www.macmillanlearning.com/college/us/product/Chemical-Principles/p/1319264576', label: 'Publisher page' },
-  { subjects: ['chem'], type: 'Textbook', level: 'Intermediate', title: 'Organic Chemistry — Klein', desc: 'Accessible orgo text. Strong on mechanisms and reaction prediction — both are high-frequency Science Bowl topics.', url: 'https://www.wiley.com/en-us/Organic+Chemistry%2C+3rd+Edition-p-9781119444251', label: 'Publisher page' },
-  { subjects: ['chem'], type: 'Textbook', level: 'Advanced', title: 'Organic Chemistry — Clayden', desc: 'The advanced orgo reference. Deep mechanistic coverage used by top Science Bowl competitors.', url: 'https://global.oup.com/academic/product/organic-chemistry-9780199270293', label: 'Publisher page' },
-  { subjects: ['chem'], type: 'Practice', level: 'All', title: 'USNCO Practice Quizzes', desc: 'US National Chemistry Olympiad-style quizzes. Rigorous problem sets with direct overlap with Science Bowl Chem content.', url: 'https://usnco-quizzes.web.app/', label: 'Practice →' },
-
-  // ── Physics ────────────────────────────────────────────────────────────
-  { subjects: ['physics'], type: 'Textbook', level: 'Intermediate', title: 'Fundamentals of Physics — Halliday', desc: 'Recommended intermediate physics text. Covers mechanics, E&M, waves, thermodynamics, and modern physics.', url: 'https://www.wiley.com/en-us/Fundamentals+of+Physics%2C+Extended%2C+10th+Edition-p-9781118230718', label: 'Publisher page' },
-  { subjects: ['physics'], type: 'Textbook', level: 'Advanced', title: 'The New Cosmic Onion — Close', desc: 'Accessible but rigorous introduction to particle physics. Covers quarks, leptons, forces, and the Standard Model.', url: 'https://www.crcpress.com/The-New-Cosmic-Onion-Quarks-and-the-Nature-of-the-Universe/Close/p/book/9781584887980', label: 'Publisher page' },
-  { subjects: ['physics'], type: 'Textbook', level: 'Advanced', title: 'Modern Physics — Krane', desc: 'Standard modern physics text. Covers relativity, quantum mechanics, nuclear and particle physics in depth.', url: 'https://www.wiley.com/en-us/Modern+Physics%2C+3rd+Edition-p-9781118061145', label: 'Publisher page' },
-  { subjects: ['physics', 'math'], type: 'Collection', level: 'Advanced', title: 'Physics & Math Textbook Collection (Dropbox)', desc: 'Team PDF library for preview: HRK, Wang & Ricardo, Morin, Kleppner & Kolenkow, Irodov, Griffiths, Purcell, Blundell, Lautrup, Kotkin & Serbo, Smythe, Axler, Hubbard, Strang, Riley, Schey, and more.', url: 'https://www.dropbox.com/sh/fg0o8twv3og7bb0/AAAl1oE_kisaccmoZ9ZKZ781a?dl=0', label: 'Open collection →' },
-
-  // ── Earth & Space ──────────────────────────────────────────────────────
-  { subjects: ['earth_space'], type: 'Textbook', level: 'Intermediate', title: 'Earth Science — Tarbuck & Lutgens', desc: 'Standard intermediate Earth Science text. Covers geology, meteorology, oceanography, and astronomy.', url: 'https://www.pearson.com/en-us/subject-catalog/p/earth-science/P200000006898', label: 'Publisher page' },
-  { subjects: ['earth_space'], type: 'Textbook', level: 'Intermediate', title: 'Foundations of Astronomy — Seeds', desc: 'Accessible intro to astronomy. Covers stellar evolution, the solar system, and cosmology — high-yield for Space questions.', url: 'https://www.cengage.com/c/foundations-of-astronomy-14e-seeds', label: 'Publisher page' },
-  { subjects: ['earth_space'], type: 'Textbook', level: 'Advanced', title: 'Earth: Portrait of a Planet — Marshak', desc: 'Deeper geology and tectonics. Good for advanced Earth structure, rock cycles, and geologic time questions.', url: 'https://wwnorton.com/books/9780393533507', label: 'Publisher page' },
-  { subjects: ['earth_space'], type: 'Textbook', level: 'Advanced', title: 'Essentials of Oceanography — Trujillo', desc: 'Thorough oceanography. Ocean currents, chemistry, marine biology, and deep-sea features — all tested in Science Bowl.', url: 'https://www.pearson.com/en-us/subject-catalog/p/essentials-of-oceanography/P200000006883', label: 'Publisher page' },
-  { subjects: ['earth_space'], type: 'Textbook', level: 'Advanced', title: 'Meteorology Today — Ahrens', desc: 'Standard meteorology text. Atmospheric dynamics, weather systems, fronts, and climate science.', url: 'https://www.cengage.com/c/meteorology-today-12e-ahrens', label: 'Publisher page' },
-
-  // ── Math ───────────────────────────────────────────────────────────────
-  { subjects: ['math'], type: 'Textbook', level: 'Intermediate', title: 'AoPS Book Series', desc: 'Prealgebra through Calculus. More rigorous than standard textbooks, built for competition math.', url: 'https://artofproblemsolving.com/store', label: 'Open →' },
-  { subjects: ['math'], type: 'Textbook', level: 'Intermediate', title: 'Calculus — Stewart', desc: 'Standard calculus reference. Clear coverage of limits, derivatives, integrals, series, and multivariable calculus.', url: 'https://www.cengage.com/c/calculus-9e-stewart', label: 'Publisher page' },
-  { subjects: ['math', 'physics'], type: 'Collection', level: 'Advanced', title: 'Physics & Math Textbook Collection (Dropbox)', desc: 'Team PDF library: includes Axler, Hubbard, Strang, Riley, Schey alongside advanced physics texts.', url: 'https://www.dropbox.com/sh/fg0o8twv3og7bb0/AAAl1oE_kisaccmoZ9ZKZ781a?dl=0', label: 'Open collection →' },
-  { subjects: ['math'], type: 'Collection', level: 'Advanced', title: 'Math Olympiad Articles (Dropbox)', desc: 'Team-compiled olympiad-level articles and problem sets. Strong preparation for advanced Science Bowl math questions.', url: 'https://www.dropbox.com/scl/fo/15uaax1iara306bd8i6cv/AG8WfXZyO2rr3X_ZAvhivLk?dl=0&rlkey=pj8a2d3yf4q5nbkheuc2gvcov', label: 'Open collection →' },
-];
+let allResources = [];
+let activeFilter = 'all';
 
 const LEVEL_CLASS = { 'Intermediate': 'level-mid', 'Advanced': 'level-adv' };
 
 function renderResources(filter) {
   const grid = document.getElementById('resource-grid');
-  const items = filter === 'all' ? RESOURCES : RESOURCES.filter(r => r.subjects.includes(filter));
-  if (!items.length) { grid.innerHTML = '<p class="muted" style="font-size:12px;padding:16px 0">No resources for this filter.</p>'; return; }
+  const items = filter === 'all'
+    ? allResources
+    : allResources.filter(r => r.subjects.includes(filter));
+
+  if (!items.length) {
+    grid.innerHTML = '<p class="muted" style="font-size:12px;padding:16px 0">No resources for this filter.</p>';
+    return;
+  }
 
   const seen = new Set();
-  const deduped = items.filter(r => { if (seen.has(r.title)) return false; seen.add(r.title); return true; });
+  const deduped = items.filter(r => {
+    if (seen.has(r.title)) return false;
+    seen.add(r.title);
+    return true;
+  });
 
   grid.innerHTML = deduped.map(r => {
     const levelBadge = r.level && r.level !== 'All'
       ? `<span class="rc-level ${LEVEL_CLASS[r.level] || ''}">${r.level}</span>`
       : '';
     const subjectTags = r.subjects
-      .map(s => `<span class="rc-tag">${s === 'earth_space' ? 'Earth/Space' : s.charAt(0).toUpperCase()+s.slice(1)}</span>`)
+      .map(s => `<span class="rc-tag">${s === 'earth_space' ? 'Earth/Space' : s.charAt(0).toUpperCase() + s.slice(1)}</span>`)
       .join('');
     return `
     <div class="resource-card">
@@ -96,7 +77,7 @@ function renderResources(filter) {
       </div>
       ${subjectTags}
       <h3>${r.title}</h3>
-      <p>${r.desc}</p>
+      <p>${r.description}</p>
       <a href="${r.url}" target="_blank" rel="noopener" class="rc-link">${r.label}</a>
     </div>`;
   }).join('');
@@ -105,13 +86,28 @@ function renderResources(filter) {
 function filterTab(key, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  activeFilter = key;
   renderResources(key);
 }
 
 (async () => {
   const auth = await requireAuth('student');
   if (!auth) return;
-  renderResources('all');
+
+  const { data, error } = await sb
+    .from('resources')
+    .select('subjects, type, level, title, description, url, label')
+    .order('sort_order');
+
+  if (error) {
+    document.getElementById('resource-grid').innerHTML =
+      '<p class="muted" style="font-size:12px;padding:16px 0">Failed to load resources.</p>';
+    console.error(error);
+    return;
+  }
+
+  allResources = data || [];
+  renderResources(activeFilter);
 })();
 </script>
 </body>
