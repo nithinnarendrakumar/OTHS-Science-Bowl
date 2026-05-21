@@ -1,429 +1,454 @@
-// Student dashboard logic
+// Dashboard — unified role-based view
 
-let currentUser, currentProfile, todayLog, userGoal, mySubjects;
-const today = fmtDate(new Date());
+const CRIMSON = '#B91C1C';
+let dashProfile, allStudents = [], allGoals = {}, activeMeetingId = null;
 
 async function init() {
   const auth = await requireAuth('student');
   if (!auth) return;
-  currentUser    = auth.session.user;
-  currentProfile = auth.profile;
+  dashProfile = auth.profile;
+  document.getElementById('hdr-name').textContent = dashProfile.full_name;
 
-  // Subjects this student actually covers
-  const specs = currentProfile.specialties || ['bio','chem','physics','earth_space','math'];
-  mySubjects = SUBJECTS.filter(s => specs.includes(s.key));
+  if (dashProfile.role === 'coach') {
+    document.getElementById('coach-view').classList.remove('hidden');
+    await initCoach();
+  } else {
+    document.getElementById('student-view').classList.remove('hidden');
+    await initStudent();
+  }
+}
 
-  document.getElementById('hdr-name').textContent = currentProfile.full_name;
-  document.getElementById('hdr-specialty').textContent =
-    mySubjects.map(s => s.label).join(' · ');
+// ─────────────────────────────────────────────────────────────────────────────
+// STUDENT VIEW
+// ─────────────────────────────────────────────────────────────────────────────
 
-  if (currentProfile.role === 'coach') {
-    document.getElementById('link-coach').classList.remove('hidden');
+async function initStudent() {
+  const uid = dashProfile.id;
+
+  const [studentsRes, allStatsRes, myStatsRes] = await Promise.all([
+    sb.from('profiles').select('id,full_name').eq('role', 'student'),
+    sb.from('meeting_player_stats').select('user_id,subject,tossups_correct,tossups_neg'),
+    sb.from('meeting_player_stats').select('meeting_id,subject,tossups_correct,tossups_neg').eq('user_id', uid),
+  ]);
+
+  const students = studentsRes.data || [];
+  const allStats = allStatsRes.data || [];
+  const myStats  = myStatsRes.data  || [];
+
+  const rankings = computeRankings(students, allStats);
+  const myRank   = rankings.findIndex(r => r.id === uid) + 1;
+  const myData   = rankings.find(r => r.id === uid) || { c: 0, n: 0, acc: 0, bySub: {} };
+
+  const meetingIds = [...new Set(myStats.map(s => s.meeting_id))];
+  let meetings = [];
+  if (meetingIds.length) {
+    const { data } = await sb.from('meetings').select('id,meeting_date').in('id', meetingIds).order('meeting_date');
+    meetings = data || [];
   }
 
-  buildSubjectFields();
-  buildSubjectSettings();
-  await Promise.all([loadGoal(), loadTodayLog(), loadWeek(), loadPracticeTests(), loadTextbooks(), loadMeetingStats()]);
-  renderStats();
+  renderStudent(uid, myRank, rankings, myData, myStats, meetings);
 }
 
-// ── Subject self-selection ─────────────────────────────────────────────────
-function buildSubjectSettings() {
-  const wrap = document.getElementById('my-subject-checks');
-  const current = currentProfile.specialties || SUBJECTS.map(s => s.key);
-  wrap.innerHTML = SUBJECTS.map(s => `
-    <label class="subject-check-label ${current.includes(s.key) ? 'active' : ''}" id="scl-${s.key}">
-      <input type="checkbox" value="${s.key}" id="sc-${s.key}"
-        ${current.includes(s.key) ? 'checked' : ''}
-        onchange="document.getElementById('scl-${s.key}').classList.toggle('active', this.checked)"
-        style="width:auto;border:none;border-bottom:none" />
-      ${s.label}
-    </label>`).join('');
-}
-
-document.getElementById('btn-save-subjects').addEventListener('click', async () => {
-  const selected = SUBJECTS.filter(s => document.getElementById(`sc-${s.key}`)?.checked).map(s => s.key);
-  if (!selected.length) { alert('Select at least one subject.'); return; }
-
-  const { error } = await sb.from('profiles').update({ specialties: selected }).eq('id', currentUser.id);
-  if (error) { alert('Error: ' + error.message); return; }
-
-  currentProfile.specialties = selected;
-  mySubjects = SUBJECTS.filter(s => selected.includes(s.key));
-  document.getElementById('hdr-specialty').textContent = mySubjects.map(s => s.label).join(' · ');
-  buildSubjectFields();
-  alert('Subjects updated. Your log form has been refreshed.');
-});
-
-// ── Build subject input fields from specialty ──────────────────────────────
-function buildSubjectFields() {
-  const grid = document.getElementById('subject-fields');
-  grid.innerHTML = mySubjects.map(s => `
-    <div class="field">
-      <label>${s.label} (min)</label>
-      <input type="number" id="min-${s.key}" min="0" value="0" />
-    </div>`).join('') + `
-    <div class="field">
-      <label>Anki (min)</label>
-      <input type="number" id="anki-min" min="0" value="0" />
-    </div>`;
-}
-
-// ── Goal ──────────────────────────────────────────────────────────────────
-async function loadGoal() {
-  const { data } = await sb.from('student_goals').select('*').eq('user_id', currentUser.id).maybeSingle();
-  userGoal = data || { min_daily_minutes: DEFAULT_DAILY_MIN, min_weekly_minutes: DEFAULT_WEEKLY_MIN };
-  document.getElementById('goal-daily').textContent  = userGoal.min_daily_minutes + 'm';
-  document.getElementById('goal-weekly').textContent = userGoal.min_weekly_minutes + 'm';
-}
-
-// ── Today's log ────────────────────────────────────────────────────────────
-async function loadTodayLog() {
-  const { data } = await sb.from('daily_logs').select('*')
-    .eq('user_id', currentUser.id).eq('log_date', today).maybeSingle();
-  todayLog = data;
-
-  if (todayLog) {
-    for (const s of mySubjects) {
-      const el = document.getElementById(`min-${s.key}`);
-      if (el) el.value = todayLog[s.col] || 0;
+function computeRankings(students, allStats) {
+  const SUB_KEYS = ['bio', 'chem', 'physics', 'earth_space', 'math'];
+  return students.map(s => {
+    const stats = allStats.filter(x => x.user_id === s.id);
+    const c = stats.reduce((a, x) => a + x.tossups_correct, 0);
+    const n = stats.reduce((a, x) => a + x.tossups_neg, 0);
+    const bySub = {};
+    for (const k of SUB_KEYS) {
+      const ss = stats.filter(x => x.subject === k);
+      bySub[k] = { c: ss.reduce((a, x) => a + x.tossups_correct, 0), n: ss.reduce((a, x) => a + x.tossups_neg, 0) };
     }
-    const ankiEl = document.getElementById('anki-min');
-    if (ankiEl) ankiEl.value = todayLog.anki_minutes || 0;
-    document.getElementById('log-notes').value = todayLog.notes || '';
-    document.getElementById('submit-label').textContent = 'Update Log';
-  }
+    return { id: s.id, name: s.full_name, c, n, acc: c + n > 0 ? c / (c + n) : 0, bySub };
+  }).sort((a, b) => b.acc - a.acc || b.c - a.c);
 }
 
-document.getElementById('log-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
+function renderStudent(uid, myRank, rankings, myData, myStats, meetings) {
+  const acc   = myData.c + myData.n > 0 ? Math.round(myData.acc * 100) : null;
+  const total = rankings.length;
 
-  const notes = document.getElementById('log-notes').value.trim();
-  if (notes.length < 80) {
-    document.getElementById('log-notes').focus();
-    document.getElementById('notes-counter').className = 'char-count warn';
-    alert(`Notes must be at least 80 characters. Currently ${notes.length}.`);
-    return;
+  document.getElementById('s-rank').textContent      = myRank ? '#' + myRank : '–';
+  document.getElementById('s-rank-of').textContent   = `of ${total}`;
+  document.getElementById('s-acc').textContent        = acc !== null ? acc + '%' : '–';
+  document.getElementById('s-acc-detail').textContent = `${myData.c} correct · ${myData.n} neg`;
+  document.getElementById('s-meetings').textContent   = meetings.length;
+
+  // Per-subject cards
+  document.getElementById('s-subjects').innerHTML = SUBJECTS.map(s => {
+    const d   = myData.bySub[s.key] || { c: 0, n: 0 };
+    const a   = d.c + d.n > 0 ? Math.round(d.c / (d.c + d.n) * 100) : null;
+    const cls = a === null ? '' : a >= 75 ? 'good' : a >= 50 ? 'warn' : 'danger';
+    return `<div class="sub-acc-card">
+      <div class="sub-acc-label">${s.label}</div>
+      <div class="sub-acc-val ${cls}">${a !== null ? a + '%' : '–'}</div>
+      <div class="sub-acc-detail">${d.c}✓${d.n > 0 ? ' ' + d.n + '✗' : ''}</div>
+    </div>`;
+  }).join('');
+
+  // Group stats by meeting
+  const statsByMid = {};
+  for (const s of myStats) {
+    statsByMid[s.meeting_id] ??= { c: 0, n: 0 };
+    statsByMid[s.meeting_id].c += s.tossups_correct;
+    statsByMid[s.meeting_id].n += s.tossups_neg;
   }
 
-  const btn = document.getElementById('btn-submit');
-  btn.disabled = true;
-  document.getElementById('submit-label').textContent = 'Saving…';
+  if (!meetings.length) {
+    document.getElementById('s-history').innerHTML =
+      '<tr><td colspan="5" class="muted" style="padding:16px 0">No meetings recorded yet.</td></tr>';
+  } else {
+    document.getElementById('s-no-meetings').style.display = 'none';
+    document.getElementById('s-chart').style.display = 'block';
 
-  const payload = { user_id: currentUser.id, log_date: today, updated_at: new Date().toISOString() };
-
-  // Zero all subjects first, then fill in what this student tracks
-  for (const s of SUBJECTS) payload[s.col] = 0;
-  for (const s of mySubjects) {
-    payload[s.col] = parseInt(document.getElementById(`min-${s.key}`)?.value) || 0;
-  }
-  payload.anki_minutes = parseInt(document.getElementById('anki-min')?.value) || 0;
-  payload.notes = document.getElementById('log-notes').value.trim();
-
-  const { error } = await sb.from('daily_logs').upsert(payload, { onConflict: 'user_id,log_date' });
-
-  btn.disabled = false;
-  document.getElementById('submit-label').textContent = 'Update Log';
-
-  if (error) { alert('Error: ' + error.message); return; }
-
-  await saveTextbookEntries();
-  await savePracticeTestEntries();
-  await loadTodayLog();
-  await loadWeek();
-  renderStats();
-});
-
-// ── Week table ─────────────────────────────────────────────────────────────
-let weekLogs = [];
-
-async function loadWeek() {
-  const ws = fmtDate(weekStart());
-  const we = fmtDate(new Date(weekStart().getTime() + 6 * 86400000));
-  const { data } = await sb.from('daily_logs').select('*')
-    .eq('user_id', currentUser.id).gte('log_date', ws).lte('log_date', we);
-  weekLogs = data || [];
-  renderWeekTable();
-}
-
-function renderWeekTable() {
-  const ws = weekStart();
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(ws.getTime() + i * 86400000);
-    return { date: fmtDate(d), label: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i], d };
-  });
-
-  const logByDate = {};
-  for (const l of weekLogs) logByDate[l.log_date] = l;
-
-  const thead = document.getElementById('week-thead');
-  thead.innerHTML = '<tr><th>Subject</th>' +
-    days.map(d => `<th class="${d.date === today ? 'today' : ''}">${d.label}<br><span style="font-weight:400;font-size:10px">${d.date.slice(5)}</span></th>`).join('') +
-    '<th class="right">Total</th></tr>';
-
-  const tbody = document.getElementById('week-tbody');
-  let rows = '';
-  let weekTotal = 0;
-
-  for (const s of mySubjects) {
-    let rowTotal = 0;
-    const cells = days.map(d => {
-      const log = logByDate[d.date];
-      const val = log ? (log[s.col] || 0) : null;
-      if (val !== null && val > 0) rowTotal += val;
-      const isPast = d.d < new Date() && d.date !== today;
-      const cls = d.date === today ? 'today' : '';
-      if (val === null && isPast) return `<td class="${cls} miss">×</td>`;
-      if (val === 0 || val === null) return `<td class="${cls} zero">–</td>`;
-      return `<td class="${cls}">${val}m</td>`;
+    document.getElementById('s-history').innerHTML = [...meetings].reverse().map(m => {
+      const d   = statsByMid[m.id] || { c: 0, n: 0 };
+      const a   = d.c + d.n > 0 ? Math.round(d.c / (d.c + d.n) * 100) : null;
+      const pts = (d.c - d.n) * 4;
+      return `<tr>
+        <td>${m.meeting_date}</td>
+        <td class="num right">${d.c}</td>
+        <td class="num right" style="color:var(--muted)">${d.n > 0 ? d.n : '–'}</td>
+        <td class="num right">${pts !== 0 ? (pts > 0 ? '+' : '') + pts : '–'}</td>
+        <td class="num right">${a !== null ? a + '%' : '–'}</td>
+      </tr>`;
     }).join('');
-    weekTotal += rowTotal;
-    rows += `<tr><td>${s.label}</td>${cells}<td class="num right">${rowTotal || '–'}</td></tr>`;
+
+    new Chart(document.getElementById('s-chart'), {
+      type: 'line',
+      data: {
+        labels: meetings.map(m => m.meeting_date.slice(5)),
+        datasets: [{
+          label: 'Accuracy %',
+          data: meetings.map(m => {
+            const d = statsByMid[m.id] || { c: 0, n: 0 };
+            return d.c + d.n > 0 ? Math.round(d.c / (d.c + d.n) * 100) : null;
+          }),
+          borderColor: CRIMSON,
+          backgroundColor: 'rgba(185,28,28,.08)',
+          pointBackgroundColor: CRIMSON,
+          pointRadius: 4,
+          fill: true,
+          tension: .3,
+          borderWidth: 2,
+          spanGaps: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { min: 0, max: 100, grid: { color: '#eee' }, ticks: { callback: v => v + '%' } },
+        },
+      },
+    });
   }
 
-  // Anki row
-  let ankiTotal = 0;
-  const ankiCells = days.map(d => {
-    const log = logByDate[d.date];
-    const val = log ? (log.anki_minutes || 0) : null;
-    if (val !== null && val > 0) ankiTotal += val;
-    const isPast = d.d < new Date() && d.date !== today;
-    const cls = d.date === today ? 'today' : '';
-    if (val === null && isPast) return `<td class="${cls} miss">×</td>`;
-    if (val === 0 || val === null) return `<td class="${cls} zero">–</td>`;
-    return `<td class="${cls}">${val}m</td>`;
-  }).join('');
-  rows += `<tr style="color:var(--muted)"><td>Anki</td>${ankiCells}<td class="num right">${ankiTotal || '–'}</td></tr>`;
-
-  // Total row
-  const totalCells = days.map(d => {
-    const log = logByDate[d.date];
-    const isPast = d.d < new Date() && d.date !== today;
-    const cls = d.date === today ? 'today' : '';
-    if (!log) return isPast ? `<td class="${cls} miss">×</td>` : `<td class="${cls}"></td>`;
-    const t = mySubjects.reduce((a, s) => a + (log[s.col] || 0), 0);
-    const dim = t < userGoal.min_daily_minutes ? 'style="color:var(--muted)"' : '';
-    return `<td class="${cls}" ${dim}><b>${t}m</b></td>`;
-  }).join('');
-  rows += `<tr style="border-top:1px solid var(--border2)"><td><b>Total</b></td>${totalCells}<td class="num right"><b>${weekTotal}m</b></td></tr>`;
-
-  tbody.innerHTML = rows;
-
-  // Update stat cards
-  document.getElementById('stat-week').textContent = weekTotal;
-  const p = Math.round((weekTotal / userGoal.min_weekly_minutes) * 100);
-  document.getElementById('stat-goal-pct').textContent = p + '%';
-}
-
-// ── Stats ──────────────────────────────────────────────────────────────────
-async function renderStats() {
-  const from = fmtDate(new Date(Date.now() - 60 * 86400000));
-  const { data } = await sb.from('daily_logs')
-    .select('log_date,' + mySubjects.map(s => s.col).join(','))
-    .eq('user_id', currentUser.id).gte('log_date', from).order('log_date', { ascending: false });
-
-  const logDates = new Set((data || []).filter(l =>
-    mySubjects.reduce((a, s) => a + (l[s.col] || 0), 0) > 0
-  ).map(l => l.log_date));
-
-  let streak = 0, d = new Date();
-  if (!logDates.has(fmtDate(d))) d = new Date(d.getTime() - 86400000);
-  while (logDates.has(fmtDate(d))) { streak++; d = new Date(d.getTime() - 86400000); }
-  document.getElementById('stat-streak').textContent = streak;
-
-  // Neglect: any specialty subject not studied in 7 days?
-  const from7 = fmtDate(new Date(Date.now() - 7 * 86400000));
-  const { data: recent } = await sb.from('daily_logs')
-    .select(mySubjects.map(s => s.col).join(','))
-    .eq('user_id', currentUser.id).gte('log_date', from7);
-
-  const alerts = [];
-  for (const s of mySubjects) {
-    const total = (recent || []).reduce((a, l) => a + (l[s.col] || 0), 0);
-    if (total === 0) alerts.push(s.label);
-  }
-
-  const alertEl = document.getElementById('neglect-alerts');
-  alertEl.innerHTML = alerts.length
-    ? `<div class="alert warn">No study logged for ${alerts.join(', ')} in the past 7 days.</div>`
-    : '';
-}
-
-// ── Textbook entries ───────────────────────────────────────────────────────
-async function loadTextbooks() {
-  const from30 = fmtDate(new Date(Date.now() - 30 * 86400000));
-  const { data } = await sb.from('textbook_entries').select('*')
-    .eq('user_id', currentUser.id).gte('log_date', from30).order('log_date', { ascending: false });
-  const tbody = document.getElementById('tb-history');
-  if (!data?.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="muted" style="padding:12px 0">None yet.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = data.map(e => `
-    <tr>
-      <td>${e.log_date}</td>
-      <td>${SUBJECTS.find(s=>s.key===e.subject)?.label || e.subject}</td>
-      <td>${e.textbook_name}</td>
-      <td class="mono">${e.pages_start}–${e.pages_end}</td>
-      <td class="num">${e.pages_end - e.pages_start}</td>
-    </tr>`).join('');
-}
-
-function addTbRow() {
-  const id = Date.now();
-  const row = document.createElement('div');
-  row.className = 'entry-row';
-  row.id = `tb-${id}`;
-  row.innerHTML = `
-    <select style="max-width:110px">
-      ${mySubjects.map(s => `<option value="${s.key}">${s.label}</option>`).join('')}
-    </select>
-    <input type="text" placeholder="Textbook / resource" style="flex:2" />
-    <input type="number" placeholder="p. from" min="0" style="max-width:70px" />
-    <input type="number" placeholder="p. to"   min="0" style="max-width:70px" />
-    <button type="button" class="small danger" onclick="this.closest('.entry-row').remove()">✕</button>`;
-  document.getElementById('tb-rows').appendChild(row);
-}
-
-async function saveTextbookEntries() {
-  const rows = document.querySelectorAll('#tb-rows .entry-row');
-  await sb.from('textbook_entries').delete().eq('user_id', currentUser.id).eq('log_date', today);
-  const inserts = [];
-  rows.forEach(row => {
-    const [subEl, nameEl, startEl, endEl] = row.querySelectorAll('select, input');
-    const name = nameEl.value.trim();
-    const start = parseInt(startEl.value), end = parseInt(endEl.value);
-    if (name && !isNaN(start) && !isNaN(end) && end >= start)
-      inserts.push({ user_id: currentUser.id, log_date: today, subject: subEl.value, textbook_name: name, pages_start: start, pages_end: end });
-  });
-  if (inserts.length) await sb.from('textbook_entries').insert(inserts);
-  await loadTextbooks();
-}
-
-// ── Practice test entries ──────────────────────────────────────────────────
-async function loadPracticeTests() {
-  const from60 = fmtDate(new Date(Date.now() - 60 * 86400000));
-  const { data } = await sb.from('practice_test_entries').select('*')
-    .eq('user_id', currentUser.id).gte('log_date', from60).order('log_date', { ascending: false });
-  const tbody = document.getElementById('pt-history');
-  if (!data?.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="muted" style="padding:12px 0">None yet.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = data.map(e => {
-    const p = e.score_total ? Math.round((e.score_correct / e.score_total) * 100) : null;
-    return `<tr>
-      <td>${e.log_date}</td>
-      <td>${e.test_name}</td>
-      <td>${SUBJECTS.find(s=>s.key===e.subject)?.label || (e.subject === 'mixed' ? 'Mixed' : '–')}</td>
-      <td class="mono">${e.score_correct ?? '–'}/${e.score_total ?? '–'}</td>
-      <td class="num">${p !== null ? p + '%' : '–'}</td>
+  // Team rankings
+  document.getElementById('s-rankings').innerHTML = rankings.map((r, i) => {
+    const a   = r.c + r.n > 0 ? Math.round(r.acc * 100) : null;
+    const you = r.id === uid;
+    return `<tr ${you ? 'style="background:rgba(185,28,28,.06);font-weight:600"' : ''}>
+      <td>${i + 1}</td>
+      <td>${r.name}${you ? ' <span class="tag ok" style="font-size:9px">you</span>' : ''}</td>
+      <td class="num right">${r.c}</td>
+      <td class="num right" style="color:var(--muted)">${r.n}</td>
+      <td class="num right">${a !== null ? a + '%' : '–'}</td>
     </tr>`;
   }).join('');
 }
 
-function addPtRow() {
-  const id = Date.now();
-  const row = document.createElement('div');
-  row.className = 'entry-row';
-  row.id = `pt-${id}`;
-  row.innerHTML = `
-    <input type="text" placeholder="Test / packet name" style="flex:2" />
-    <select style="max-width:110px">
-      <option value="mixed">Mixed</option>
-      ${mySubjects.map(s => `<option value="${s.key}">${s.label}</option>`).join('')}
-    </select>
-    <input type="number" placeholder="Correct" min="0" style="max-width:70px" />
-    <span class="muted" style="font-size:11px">/</span>
-    <input type="number" placeholder="Total" min="1" style="max-width:70px" />
-    <button type="button" class="small danger" onclick="this.closest('.entry-row').remove()">✕</button>`;
-  document.getElementById('pt-rows').appendChild(row);
+// ─────────────────────────────────────────────────────────────────────────────
+// COACH VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function initCoach() {
+  const { data: students } = await sb.from('profiles').select('*').eq('role', 'student').order('full_name');
+  allStudents = students || [];
+
+  const { data: goals } = await sb.from('student_goals').select('*');
+  for (const g of (goals || [])) allGoals[g.user_id] = g;
+
+  const opts = allStudents.map(s => `<option value="${s.id}">${s.full_name}</option>`).join('');
+  document.getElementById('detail-select').innerHTML = '<option value="">— select student —</option>' + opts;
+  document.getElementById('cfg-student').innerHTML   = '<option value="">— select —</option>' + opts;
+
+  document.getElementById('cfg-specs').innerHTML = SUBJECTS.map(s => `
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted)">
+      <input type="checkbox" value="${s.key}" id="spec-${s.key}" style="width:auto;border:none;border-bottom:none" />
+      ${s.label}
+    </label>`).join('');
+
+  await renderLeaderboard();
+  setupCoachEvents();
 }
 
-async function savePracticeTestEntries() {
-  const rows = document.querySelectorAll('#pt-rows .entry-row');
-  await sb.from('practice_test_entries').delete().eq('user_id', currentUser.id).eq('log_date', today);
-  const inserts = [];
-  rows.forEach(row => {
-    const nameEl = row.querySelector('input[type="text"]');
-    const subEl  = row.querySelector('select');
-    const nums   = row.querySelectorAll('input[type="number"]');
-    const name = nameEl.value.trim();
-    if (name) inserts.push({
-      user_id: currentUser.id, log_date: today, test_name: name,
-      subject: subEl.value,
-      score_correct: nums[0].value !== '' ? parseInt(nums[0].value) : null,
-      score_total:   nums[1].value !== '' ? parseInt(nums[1].value) : null,
-    });
-  });
-  if (inserts.length) await sb.from('practice_test_entries').insert(inserts);
-  await loadPracticeTests();
-}
-
-// ── Meeting stats ──────────────────────────────────────────────────────────
-async function loadMeetingStats() {
-  const from60 = fmtDate(new Date(Date.now() - 60 * 86400000));
-
-  // Get meetings the student attended
-  const { data: attendance } = await sb.from('meeting_attendance')
-    .select('meeting_id').eq('user_id', currentUser.id);
-  if (!attendance?.length) {
-    document.getElementById('meeting-stats').innerHTML =
-      '<tr><td colspan="5" class="muted" style="padding:12px 0">No meetings logged yet.</td></tr>';
+async function renderLeaderboard() {
+  const ids = allStudents.map(s => s.id);
+  if (!ids.length) {
+    document.getElementById('lb-tbody').innerHTML =
+      '<tr><td colspan="9" class="muted" style="padding:20px 0">No students yet.</td></tr>';
     return;
   }
 
-  const mids = attendance.map(a => a.meeting_id);
-  const [{ data: stats }, { data: meetings }] = await Promise.all([
-    sb.from('meeting_player_stats').select('*').eq('user_id', currentUser.id).in('meeting_id', mids),
-    sb.from('meetings').select('id,meeting_date').in('id', mids).gte('meeting_date', from60).order('meeting_date', { ascending: false }),
+  const { data: allStats } = await sb.from('meeting_player_stats')
+    .select('user_id,subject,tossups_correct,tossups_neg').in('user_id', ids);
+
+  const rankings = computeRankings(allStudents, allStats || []);
+  const SUB_KEYS = ['bio', 'chem', 'physics', 'earth_space', 'math'];
+
+  document.getElementById('lb-tbody').innerHTML = rankings.map((r, i) => {
+    const subCells = SUB_KEYS.map(k => {
+      const d = r.bySub[k] || { c: 0, n: 0 };
+      const a = d.c + d.n > 0 ? Math.round(d.c / (d.c + d.n) * 100) : null;
+      return `<td class="num right" style="font-size:11px">${a !== null ? a + '%' : '<span class="muted">–</span>'}</td>`;
+    }).join('');
+    const acc = r.c + r.n > 0 ? Math.round(r.acc * 100) : null;
+    const pts = (r.c - r.n) * 4;
+    return `<tr>
+      <td class="muted">${i + 1}</td>
+      <td style="font-weight:600">${r.name}</td>
+      ${subCells}
+      <td class="num right"><b>${acc !== null ? acc + '%' : '–'}</b></td>
+      <td class="num right">${pts !== 0 ? (pts > 0 ? '+' : '') + pts : '–'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadStudentDetail(uid) {
+  const panel   = document.getElementById('detail-panel');
+  const student = allStudents.find(s => s.id === uid);
+  if (!student) { panel.innerHTML = ''; return; }
+  panel.innerHTML = '<p class="muted" style="font-size:12px">Loading…</p>';
+
+  const [statsRes, meetingsRes] = await Promise.all([
+    sb.from('meeting_player_stats').select('meeting_id,subject,tossups_correct,tossups_neg').eq('user_id', uid),
+    sb.from('meetings').select('id,meeting_date').order('meeting_date'),
   ]);
 
-  const dateByMid = {};
-  for (const m of (meetings||[])) dateByMid[m.id] = m.meeting_date;
+  const stats    = statsRes.data || [];
+  const meetings = meetingsRes.data || [];
+  const midsWithStats = new Set(stats.map(s => s.meeting_id));
+  const relevant  = meetings.filter(m => midsWithStats.has(m.id));
 
-  const statsByMid = {};
-  for (const s of (stats||[])) {
-    if (!statsByMid[s.meeting_id]) statsByMid[s.meeting_id] = [];
-    statsByMid[s.meeting_id].push(s);
-  }
-
-  const tbody = document.getElementById('meeting-stats');
-  const recentMids = (meetings||[]).map(m => m.id);
-
-  if (!recentMids.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="muted" style="padding:12px 0">No meetings in last 60 days.</td></tr>';
+  if (!relevant.length) {
+    panel.innerHTML = `<p class="muted" style="font-size:12px">${student.full_name} has no meeting data yet.</p>`;
     return;
   }
 
-  let rows = '';
-  for (const mid of recentMids) {
-    const date = dateByMid[mid];
-    const mStats = statsByMid[mid] || [];
-    const totalCorrect = mStats.reduce((a, s) => a + s.tossups_correct, 0);
-    const totalNeg     = mStats.reduce((a, s) => a + s.tossups_neg, 0);
-    const pts = (totalCorrect - totalNeg) * 4;
-
-    if (!mStats.length) {
-      rows += `<tr><td>${date}</td><td class="muted" colspan="4">Present — no toss-up data recorded</td></tr>`;
-      continue;
-    }
-
-    // One row per subject with data
-    mStats.forEach((s, i) => {
-      const subLabel = SUBJECTS.find(x => x.key === s.subject)?.label || s.subject;
-      const subPts = (s.tossups_correct - s.tossups_neg) * 4;
-      rows += `<tr>
-        <td>${i === 0 ? date : ''}</td>
-        <td>${subLabel}</td>
-        <td class="num">${s.tossups_correct || '–'}</td>
-        <td class="num" style="color:var(--muted)">${s.tossups_neg > 0 ? '-'+s.tossups_neg : '–'}</td>
-        <td class="num">${i === 0 ? `<b>${pts > 0 ? '+' : ''}${pts}</b>` : ''}</td>
-      </tr>`;
-    });
+  const statsByMid = {};
+  for (const s of stats) {
+    statsByMid[s.meeting_id] ??= { c: 0, n: 0, bySub: {} };
+    statsByMid[s.meeting_id].c += s.tossups_correct;
+    statsByMid[s.meeting_id].n += s.tossups_neg;
+    statsByMid[s.meeting_id].bySub[s.subject] = { c: s.tossups_correct, n: s.tossups_neg };
   }
 
-  tbody.innerHTML = rows;
+  const tableRows = [...relevant].reverse().map(m => {
+    const d = statsByMid[m.id];
+    const a = d.c + d.n > 0 ? Math.round(d.c / (d.c + d.n) * 100) : null;
+    const subCells = SUBJECTS.map(s => {
+      const sd = d.bySub[s.key];
+      if (!sd) return `<td class="num right muted" style="font-size:11px">–</td>`;
+      const sa = sd.c + sd.n > 0 ? Math.round(sd.c / (sd.c + sd.n) * 100) : null;
+      return `<td class="num right" style="font-size:11px">${sa !== null ? sa + '%' : '–'}</td>`;
+    }).join('');
+    return `<tr>
+      <td>${m.meeting_date}</td>${subCells}
+      <td class="num right"><b>${a !== null ? a + '%' : '–'}</b></td>
+      <td class="num right">${d.c}</td>
+      <td class="num right" style="color:var(--muted)">${d.n}</td>
+    </tr>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:12px">${student.full_name}</p>
+    <div class="table-wrap" style="margin-bottom:20px">
+      <table style="font-size:12px">
+        <thead><tr>
+          <th>Date</th>
+          ${SUBJECTS.map(s => `<th class="right">${s.label.slice(0,4)}</th>`).join('')}
+          <th class="right">Acc</th><th class="right">✓</th><th class="right">✗</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+    <canvas id="detail-chart" height="80"></canvas>`;
+
+  new Chart(document.getElementById('detail-chart'), {
+    type: 'line',
+    data: {
+      labels: relevant.map(m => m.meeting_date.slice(5)),
+      datasets: [{
+        label: 'Accuracy %',
+        data: relevant.map(m => {
+          const d = statsByMid[m.id];
+          return d.c + d.n > 0 ? Math.round(d.c / (d.c + d.n) * 100) : null;
+        }),
+        borderColor: CRIMSON,
+        backgroundColor: 'rgba(185,28,28,.08)',
+        pointBackgroundColor: CRIMSON,
+        pointRadius: 4,
+        fill: true,
+        tension: .3,
+        borderWidth: 2,
+        spanGaps: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { min: 0, max: 100, grid: { color: '#eee' }, ticks: { callback: v => v + '%' } },
+      },
+    },
+  });
+}
+
+// ── Log meeting scores ─────────────────────────────────────────────────────
+
+function addScoreRow() {
+  const id  = Date.now();
+  const row = document.createElement('div');
+  row.className = 'entry-row';
+  row.id = `sr-${id}`;
+  row.innerHTML = `
+    <select style="max-width:160px" id="sr-player-${id}">
+      <option value="">— player —</option>
+      ${allStudents.map(s => `<option value="${s.id}">${s.full_name}</option>`).join('')}
+    </select>
+    <select style="max-width:120px" id="sr-sub-${id}">
+      ${SUBJECTS.map(s => `<option value="${s.key}">${s.label}</option>`).join('')}
+    </select>
+    <input type="number" min="0" placeholder="Correct" style="max-width:75px" id="sr-c-${id}" />
+    <input type="number" min="0" placeholder="Neg"     style="max-width:60px" id="sr-n-${id}" />
+    <button type="button" class="small danger" onclick="this.closest('.entry-row').remove()">✕</button>`;
+  document.getElementById('score-rows').appendChild(row);
+}
+
+function setupCoachEvents() {
+
+  document.getElementById('btn-create-meeting').addEventListener('click', async () => {
+    const date = document.getElementById('log-date').value;
+    if (!date) { alert('Pick a date.'); return; }
+
+    let { data: existing } = await sb.from('meetings').select('id,meeting_date').eq('meeting_date', date).maybeSingle();
+    if (!existing) {
+      const notes = document.getElementById('log-notes').value.trim() || null;
+      const { data, error } = await sb.from('meetings')
+        .insert({ meeting_date: date, notes, created_by: dashProfile.id })
+        .select('id,meeting_date').single();
+      if (error) { alert('Error: ' + error.message); return; }
+      existing = data;
+    }
+
+    activeMeetingId = existing.id;
+    document.getElementById('active-meeting-date').textContent = existing.meeting_date;
+    document.getElementById('score-entry').classList.remove('hidden');
+    document.getElementById('score-rows').innerHTML = '';
+    addScoreRow();
+  });
+
+  document.getElementById('btn-save-scores').addEventListener('click', async () => {
+    if (!activeMeetingId) return;
+    const rows    = document.querySelectorAll('#score-rows .entry-row');
+    const inserts = [];
+
+    for (const row of rows) {
+      const id  = row.id.replace('sr-', '');
+      const uid = document.getElementById(`sr-player-${id}`)?.value;
+      const sub = document.getElementById(`sr-sub-${id}`)?.value;
+      const c   = parseInt(document.getElementById(`sr-c-${id}`)?.value) || 0;
+      const n   = parseInt(document.getElementById(`sr-n-${id}`)?.value) || 0;
+      if (!uid) continue;
+      inserts.push({ meeting_id: activeMeetingId, user_id: uid, subject: sub, tossups_correct: c, tossups_neg: n });
+    }
+
+    if (!inserts.length) { alert('No rows to save.'); return; }
+
+    const { error } = await sb.from('meeting_player_stats')
+      .upsert(inserts, { onConflict: 'meeting_id,user_id,subject' });
+    if (error) { alert('Error: ' + error.message); return; }
+
+    document.getElementById('score-entry').classList.add('hidden');
+    activeMeetingId = null;
+    await renderLeaderboard();
+    alert('Scores saved.');
+  });
+
+  document.getElementById('detail-select').addEventListener('change', async e => {
+    if (e.target.value) await loadStudentDetail(e.target.value);
+    else document.getElementById('detail-panel').innerHTML = '';
+  });
+
+  document.getElementById('cfg-student').addEventListener('change', e => {
+    const uid = e.target.value;
+    if (!uid) return;
+    const g = allGoals[uid] || { min_daily_minutes: 90, min_weekly_minutes: 630 };
+    document.getElementById('cfg-daily').value  = g.min_daily_minutes;
+    document.getElementById('cfg-weekly').value = g.min_weekly_minutes;
+    const student = allStudents.find(s => s.id === uid);
+    const specs   = student?.specialties || SUBJECTS.map(s => s.key);
+    for (const s of SUBJECTS) {
+      const cb = document.getElementById(`spec-${s.key}`);
+      if (cb) cb.checked = specs.includes(s.key);
+    }
+  });
+
+  document.getElementById('btn-save-cfg').addEventListener('click', async () => {
+    const uid   = document.getElementById('cfg-student').value;
+    if (!uid) { alert('Select a student.'); return; }
+    const daily  = parseInt(document.getElementById('cfg-daily').value);
+    const weekly = parseInt(document.getElementById('cfg-weekly').value);
+    const specs  = SUBJECTS.filter(s => document.getElementById(`spec-${s.key}`)?.checked).map(s => s.key);
+    if (!specs.length) { alert('Select at least one specialty.'); return; }
+
+    const [g, p] = await Promise.all([
+      sb.from('student_goals').upsert({
+        user_id: uid, min_daily_minutes: daily, min_weekly_minutes: weekly,
+        updated_by: dashProfile.id, updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' }),
+      sb.from('profiles').update({ specialties: specs }).eq('id', uid),
+    ]);
+    if (g.error || p.error) { alert('Error saving.'); return; }
+    allGoals[uid] = { user_id: uid, min_daily_minutes: daily, min_weekly_minutes: weekly };
+    const idx = allStudents.findIndex(s => s.id === uid);
+    if (idx >= 0) allStudents[idx].specialties = specs;
+    alert('Saved.');
+  });
+
+  document.getElementById('btn-notify').addEventListener('click', async () => {
+    const msg = document.getElementById('notify-msg').value.trim();
+    if (!msg) { alert('Enter a message.'); return; }
+    const btn    = document.getElementById('btn-notify');
+    const status = document.getElementById('notify-status');
+    btn.disabled = true;
+    status.textContent = 'Sending…';
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ content: msg }),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      status.textContent = 'Sent.';
+      document.getElementById('notify-msg').value = '';
+    } else {
+      const err = await res.json().catch(() => ({}));
+      status.textContent = 'Error: ' + (err.error || res.status);
+    }
+  });
+}
+
+async function coachRefresh() {
+  document.getElementById('btn-refresh').textContent = '…';
+  await renderLeaderboard();
+  document.getElementById('btn-refresh').textContent = 'Refresh';
 }
 
 init();

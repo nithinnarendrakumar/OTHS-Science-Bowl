@@ -466,6 +466,43 @@ hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 .right { text-align: right; }
 .streak { font-weight: 700; color: var(--gold); }
 
+/* ── Per-subject accuracy cards (student dashboard) ── */
+.sub-card-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sub-acc-card {
+  flex: 1;
+  min-width: 100px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.sub-acc-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sub-acc-val {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  margin-bottom: 2px;
+}
+.sub-acc-val.good   { color: #48bb78; }
+.sub-acc-val.warn   { color: var(--gold); }
+.sub-acc-val.danger { color: var(--crimson); }
+.sub-acc-detail {
+  font-size: 10px;
+  color: var(--muted);
+}
+
 @media (max-width: 600px) {
   .form-grid { grid-template-columns: 1fr 1fr; }
   .stat-row  { flex-direction: column; gap: 0; }

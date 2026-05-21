@@ -19,7 +19,7 @@ async function requireAuth(expectedRole) {
 
   // Redirect logged-in users away from index
   if (window.location.pathname.endsWith('index.html') || window.location.pathname === '/') {
-    window.location.href = profile.role === 'coach' ? 'coach.html' : 'dashboard.html';
+    window.location.href = 'dashboard.html';
     return null;
   }
 

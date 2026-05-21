@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Science Bowl — Dashboard</title>
+  <title>Science Bowl</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -12,164 +13,198 @@
   <h1>Science Bowl</h1>
   <span class="meta" id="hdr-name">–</span>
   <span class="spacer"></span>
-  <span class="meta">Goal: <span id="goal-daily">–</span>/day · <span id="goal-weekly">–</span>/wk</span>
-  <a href="analytics.html" class="btn small">Analytics</a>
   <a href="resources.html" class="btn small">Resources</a>
   <a href="calendar.html" class="btn small">Calendar</a>
-  <a href="coach.html" class="btn small hidden" id="link-coach">Coach →</a>
   <button class="small" onclick="signOut()">Logout</button>
 </header>
 
 <div class="page">
 
-  <div id="neglect-alerts" class="mt32"></div>
+  <!-- ── STUDENT VIEW ─────────────────────────────────── -->
+  <div id="student-view" class="hidden">
 
-  <!-- ── LOG TODAY ─────────────────────────────────── -->
-  <div class="section mt32">
-    <div class="section-header">
-      <h2>Log Today</h2>
-      <span class="muted" style="font-size:11px" id="hdr-date"></span>
+    <div class="stat-row mt32">
+      <div class="stat-card" id="rank-card">
+        <div class="label">Team Rank</div>
+        <div class="value gold" id="s-rank">–</div>
+        <div class="sub" id="s-rank-of">of –</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Overall Accuracy</div>
+        <div class="value" id="s-acc">–</div>
+        <div class="sub" id="s-acc-detail">– correct · – neg</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Meetings</div>
+        <div class="value" id="s-meetings">–</div>
+        <div class="sub">recorded</div>
+      </div>
     </div>
-    <div class="section-body">
-      <form id="log-form">
 
-        <div class="form-grid" id="subject-fields"></div>
+    <!-- Per-subject accuracy -->
+    <div class="section mt32">
+      <div class="section-header"><h2>By Subject</h2></div>
+      <div class="section-body">
+        <div class="sub-card-row" id="s-subjects"></div>
+      </div>
+    </div>
 
-        <hr />
+    <!-- Trajectory chart -->
+    <div class="section">
+      <div class="section-header"><h2>Performance Over Time</h2></div>
+      <div class="section-body">
+        <div id="s-no-meetings" class="muted" style="font-size:12px;padding:8px 0 16px">No meetings recorded yet.</div>
+        <canvas id="s-chart" height="90" style="display:none"></canvas>
+      </div>
+    </div>
 
-        <div style="margin-bottom:16px">
-          <div class="flex" style="margin-bottom:10px">
-            <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Reading</span>
-            <button type="button" class="small" onclick="addTbRow()">+ add</button>
+    <!-- Meeting history table -->
+    <div class="section">
+      <div class="section-header"><h2>Meeting History</h2></div>
+      <div class="section-body" style="padding-bottom:0">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th class="right">Correct</th><th class="right">Neg</th><th class="right">Pts</th><th class="right">Acc %</th></tr></thead>
+            <tbody id="s-history"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Team rankings -->
+    <div class="section">
+      <div class="section-header"><h2>Team Rankings</h2></div>
+      <div class="section-body" style="padding-bottom:0">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Name</th><th class="right">Correct</th><th class="right">Neg</th><th class="right">Accuracy</th></tr></thead>
+            <tbody id="s-rankings"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /student-view -->
+
+  <!-- ── COACH VIEW ───────────────────────────────────── -->
+  <div id="coach-view" class="hidden">
+
+    <!-- Team leaderboard with per-subject breakdown -->
+    <div class="section mt32">
+      <div class="section-header">
+        <h2>Team Leaderboard</h2>
+        <button class="small" id="btn-refresh" onclick="coachRefresh()">Refresh</button>
+      </div>
+      <div class="section-body" style="padding-bottom:0">
+        <div class="table-wrap">
+          <table id="lb-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Name</th>
+                <th class="right">Bio</th><th class="right">Chem</th>
+                <th class="right">Physics</th><th class="right">E/S</th><th class="right">Math</th>
+                <th class="right">Overall</th><th class="right">Pts</th>
+              </tr>
+            </thead>
+            <tbody id="lb-tbody">
+              <tr><td colspan="9" class="muted" style="padding:20px 0">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Student trajectory (expandable) -->
+    <div class="section">
+      <div class="section-header"><h2>Student Detail</h2></div>
+      <div class="section-body">
+        <select id="detail-select" style="max-width:240px;margin-bottom:16px">
+          <option value="">— select student —</option>
+        </select>
+        <div id="detail-panel"></div>
+      </div>
+    </div>
+
+    <!-- Log scores -->
+    <div class="section">
+      <div class="section-header"><h2>Log Meeting Scores</h2></div>
+      <div class="section-body">
+        <div class="form-grid" style="max-width:600px;margin-bottom:20px;align-items:end">
+          <div class="field">
+            <label>Meeting Date</label>
+            <input type="date" id="log-date" />
           </div>
-          <div id="tb-rows" class="entry-list"></div>
-        </div>
-
-        <hr />
-
-        <div style="margin-bottom:16px">
-          <div class="flex" style="margin-bottom:10px">
-            <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Practice Tests</span>
-            <button type="button" class="small" onclick="addPtRow()">+ add</button>
+          <div class="field">
+            <label>Notes (optional)</label>
+            <input type="text" id="log-notes" placeholder="e.g. Scrimmage vs Jefferson" />
           </div>
-          <div id="pt-rows" class="entry-list"></div>
+          <div class="field">
+            <button class="primary" id="btn-create-meeting">Create / Find Meeting</button>
+          </div>
         </div>
-
-        <hr />
-
-        <div class="field field-full" style="margin-bottom:6px">
-          <label>Notes <span style="color:var(--crimson)">*</span> <span style="color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none;font-size:10px">— what you studied, specific topics covered, what was hard, what to revisit (min 80 chars)</span></label>
-          <textarea id="log-notes" rows="4" placeholder="e.g. Covered Hardy-Weinberg equilibrium — struggled with the math derivation, need to revisit allele frequency problems. Went through Campbell ch.23, pages 480-492. Anki: 45 cards on cell signaling…"></textarea>
-          <div class="char-count" id="notes-counter">0 / 80</div>
+        <div id="score-entry" class="hidden">
+          <p class="muted" style="font-size:11px;margin-bottom:12px">Meeting: <span id="active-meeting-date" style="color:var(--text);font-weight:600"></span></p>
+          <div id="score-rows"></div>
+          <button class="small" style="margin-top:10px" onclick="addScoreRow()">+ Add Player</button>
+          <div style="margin-top:16px">
+            <button class="primary" id="btn-save-scores">Save All Scores</button>
+          </div>
         </div>
-
-        <button type="submit" class="primary" id="btn-submit">
-          <span id="submit-label">Save Log</span>
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ── STATS ─────────────────────────────────────── -->
-  <div class="stat-row">
-    <div class="stat-card">
-      <div class="label">Streak</div>
-      <div class="value gold" id="stat-streak">–</div>
-      <div class="sub">days</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">This Week</div>
-      <div class="value" id="stat-week">–</div>
-      <div class="sub">minutes</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Goal</div>
-      <div class="value" id="stat-goal-pct">–</div>
-      <div class="sub">of weekly target</div>
-    </div>
-  </div>
-
-  <!-- ── WEEKLY OVERVIEW ────────────────────────────── -->
-  <div class="section mt32">
-    <div class="section-header"><h2>This Week</h2></div>
-    <div class="section-body" style="padding-bottom:0">
-      <div class="table-wrap">
-        <table class="week-table">
-          <thead id="week-thead"></thead>
-          <tbody id="week-tbody"></tbody>
-        </table>
       </div>
     </div>
-  </div>
 
-  <!-- ── MEETING PERFORMANCE ──────────────────────────── -->
-  <div class="section">
-    <div class="section-header"><h2>Meeting Performance</h2></div>
-    <div class="section-body" style="padding-bottom:0">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Date</th><th>Subject</th><th class="right">Correct</th><th class="right">Negs</th><th class="right">Pts</th></tr></thead>
-          <tbody id="meeting-stats"></tbody>
-        </table>
+    <!-- Send Discord notification -->
+    <div class="section">
+      <div class="section-header"><h2>Discord Notification</h2></div>
+      <div class="section-body">
+        <div class="form-grid" style="max-width:600px;align-items:end">
+          <div class="field field-full">
+            <label>Message</label>
+            <textarea id="notify-msg" rows="3" placeholder="@everyone Practice tonight at 7pm — make sure you've reviewed your assigned subjects"></textarea>
+          </div>
+          <div class="field">
+            <button class="primary" id="btn-notify">Send to Discord</button>
+          </div>
+        </div>
+        <div id="notify-status" style="margin-top:10px;font-size:12px"></div>
       </div>
     </div>
-  </div>
 
-  <!-- ── TEXTBOOK HISTORY ───────────────────────────── -->
-  <div class="section">
-    <div class="section-header"><h2>Reading — Last 30 Days</h2></div>
-    <div class="section-body" style="padding-bottom:0">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Date</th><th>Subject</th><th>Textbook</th><th>Pages</th><th>pp.</th></tr></thead>
-          <tbody id="tb-history"></tbody>
-        </table>
+    <!-- Student config -->
+    <div class="section">
+      <div class="section-header"><h2>Student Configuration</h2></div>
+      <div class="section-body">
+        <div class="form-grid" style="max-width:700px;align-items:end">
+          <div class="field" style="grid-column:1/-1">
+            <label>Student</label>
+            <select id="cfg-student"><option value="">— select —</option></select>
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>Specialties</label>
+            <div id="cfg-specs" style="display:flex;gap:16px;flex-wrap:wrap;padding-top:8px"></div>
+          </div>
+          <div class="field">
+            <label>Min daily (min)</label>
+            <input type="number" id="cfg-daily" value="90" min="0" />
+          </div>
+          <div class="field">
+            <label>Min weekly (min)</label>
+            <input type="number" id="cfg-weekly" value="630" min="0" />
+          </div>
+          <div class="field">
+            <button class="primary" id="btn-save-cfg">Save</button>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- ── PRACTICE TEST HISTORY ─────────────────────── -->
-  <div class="section">
-    <div class="section-header"><h2>Practice Tests — Last 60 Days</h2></div>
-    <div class="section-body" style="padding-bottom:0">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Date</th><th>Test</th><th>Subject</th><th>Score</th><th>%</th></tr></thead>
-          <tbody id="pt-history"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── MY SUBJECTS ────────────────────────────────── -->
-  <div class="section">
-    <div class="section-header"><h2>My Subjects</h2></div>
-    <div class="section-body">
-      <p class="muted" style="font-size:11px;margin-bottom:14px">Select the subjects you specialize in. Only these will appear in your daily log.</p>
-      <div class="subject-checks" id="my-subject-checks"></div>
-      <button class="primary" style="margin-top:16px" id="btn-save-subjects">Save Subjects</button>
-    </div>
-  </div>
+  </div><!-- /coach-view -->
 
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/config.js"></script>
 <script src="js/auth.js"></script>
-<script>
-  document.getElementById('hdr-date').textContent =
-    new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' });
-
-  // Notes character counter + validation
-  const notesEl  = document.getElementById('log-notes');
-  const counterEl = document.getElementById('notes-counter');
-  const MIN_NOTES = 80;
-  notesEl.addEventListener('input', () => {
-    const len = notesEl.value.length;
-    counterEl.textContent = `${len} / ${MIN_NOTES}`;
-    counterEl.className = 'char-count ' + (len >= MIN_NOTES ? 'ok' : len > 40 ? 'warn' : '');
-  });
-</script>
 <script src="js/dashboard.js"></script>
 </body>
 </html>
