@@ -3,7 +3,7 @@ const { SlashCommandBuilder } = require('discord.js');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('log-scores')
-    .setDescription('Log tossup stats for a player at a meeting (coach only)')
+    .setDescription('Log tossup stats for a player at a meeting (officer only)')
     .addStringOption(o =>
       o.setName('date').setDescription('Meeting date (YYYY-MM-DD)').setRequired(true))
     .addStringOption(o =>
@@ -28,8 +28,8 @@ module.exports = {
     const { data: caller } = await sb.from('profiles')
       .select('id, role').eq('discord_id', interaction.user.id).single();
 
-    if (!caller || caller.role !== 'coach') {
-      return interaction.editReply('Only coaches can log scores.');
+    if (!caller || caller.role !== 'officer') {
+      return interaction.editReply('Only officeres can log scores.');
     }
 
     const date    = interaction.options.getString('date');

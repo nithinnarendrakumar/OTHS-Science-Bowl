@@ -1,6 +1,6 @@
 // Calendar page — meetings from DB only
 
-let calProfile, isCoach = false;
+let calProfile, isOfficer = false;
 let currentYear, currentMonth;
 let allEvents = [];
 
@@ -8,9 +8,9 @@ async function init() {
   const auth = await requireAuth('student');
   if (!auth) return;
   calProfile = auth.profile;
-  isCoach = calProfile.role === 'coach';
+  isOfficer = calProfile.role === 'officer';
 
-  if (isCoach) document.getElementById('coach-controls').classList.remove('hidden');
+  if (isOfficer) document.getElementById('officer-controls').classList.remove('hidden');
 
   const now = new Date();
   currentYear  = now.getFullYear();

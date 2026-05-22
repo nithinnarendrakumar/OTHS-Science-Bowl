@@ -59,7 +59,7 @@
       const { data: { session } } = await sb.auth.getSession();
       if (session) {
         const { data: p } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
-        if (p) window.location.href = p.role === 'coach' ? 'coach.html' : 'dashboard.html';
+        if (p) window.location.href = 'dashboard.html';
       }
     })();
 
@@ -120,7 +120,7 @@
 
       const { data: { session } } = await sb.auth.getSession();
       const { data: p } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
-      window.location.href = p?.role === 'coach' ? 'coach.html' : 'dashboard.html';
+      window.location.href = 'dashboard.html';
     });
 
     // ── Sign up: generate internal email, create user ──

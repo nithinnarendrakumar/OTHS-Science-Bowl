@@ -1,10 +1,7 @@
 // POST /api/interactions — Discord slash command handler (REST, no gateway)
 // Register the interactions endpoint URL in Discord Dev Portal → Bot → Interactions Endpoint URL
 
-import { createServer } from 'http';
-import crypto from 'crypto';
-
-export const config = { api: { bodyParser: false } };
+import { webcrypto } from 'crypto';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
@@ -30,34 +27,46 @@ const sb = {
   },
 };
 
-function verify(sig, ts, rawBody) {
+async function verify(sig, ts, rawBody) {
   try {
-    return crypto.verify(
-      'ed25519',
-      Buffer.from(ts + rawBody),
+    const key = await webcrypto.subtle.importKey(
+      'raw',
       Buffer.from(PUBLIC_KEY, 'hex'),
-      Buffer.from(sig, 'hex')
+      { name: 'Ed25519' },
+      false,
+      ['verify']
     );
-  } catch { return false; }
+    const data = new TextEncoder().encode(ts + rawBody);
+    const signature = Buffer.from(sig, 'hex');
+    return await webcrypto.subtle.verify('Ed25519', key, signature, data);
+  } catch (e) {
+    console.error('Verify error:', e.message);
+    return false;
+  }
 }
 
 async function getRawBody(req) {
+  // Vercel may pre-buffer the body on req.body as a string/Buffer
+  if (req.body) {
+    return typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+  }
   return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', chunk => { data += chunk; });
-    req.on('end', () => resolve(data));
-    req.on('error', reject);
+    const chunks = [];
+    const t = setTimeout(() => reject(new Error('Body read timeout')), 2500);
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => { clearTimeout(t); resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', e => { clearTimeout(t); reject(e); });
   });
 }
 
 async function isCoach(discordId) {
-  const rows = await sb.get('profiles', `discord_id=eq.${discordId}&role=eq.coach&select=id`);
+  const rows = await sb.get('profiles', `discord_id=eq.${discordId}&role=eq.officer&select=id`);
   return Array.isArray(rows) && rows.length > 0;
 }
 
 async function findPlayer(name) {
   const encoded = encodeURIComponent(`%${name}%`);
-  const rows = await sb.get('profiles', `full_name=ilike.${encoded}&role=eq.student&select=id,full_name`);
+  const rows = await sb.get('profiles', `full_name=ilike.${encoded}&select=id,full_name`);
   return Array.isArray(rows) ? rows : [];
 }
 
@@ -80,7 +89,7 @@ async function handleCommand(interaction) {
 
   // ── /log-meeting ──────────────────────────────────────────────────
   if (cmd === 'log-meeting') {
-    if (!await isCoach(discordId)) return respond('Only coaches can log meetings. Link your account with `/link` first.');
+    if (!await isCoach(discordId)) return respond('Only officers can log meetings. Link your account with `/link` first.');
     const date = opts.date;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return respond('Date must be YYYY-MM-DD format.');
 
@@ -93,7 +102,7 @@ async function handleCommand(interaction) {
 
   // ── /log-scores ───────────────────────────────────────────────────
   if (cmd === 'log-scores') {
-    if (!await isCoach(discordId)) return respond('Only coaches can log scores.');
+    if (!await isCoach(discordId)) return respond('Only officers can log scores.');
 
     const meeting = await findMeeting(opts.date);
     if (!meeting) return respond(`No meeting found on ${opts.date}. Create it first with \`/log-meeting\`.`);
@@ -117,7 +126,7 @@ async function handleCommand(interaction) {
 
   // ── /notify ───────────────────────────────────────────────────────
   if (cmd === 'notify') {
-    if (!await isCoach(discordId)) return respond('Only coaches can send notifications.');
+    if (!await isCoach(discordId)) return respond('Only officers can send notifications.');
     const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) return respond('Webhook not configured.');
     await fetch(webhookUrl, {
@@ -134,41 +143,61 @@ async function handleCommand(interaction) {
     if (!players.length) return respond(`No profile found matching "${opts.name}".`);
     if (players.length > 1) return respond(`Multiple matches: ${players.map(p => p.full_name).join(', ')}. Be more specific.`);
 
-    await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${players[0].id}`, {
+    const player = players[0];
+
+    // Look up email via admin API
+    const adminRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${player.id}`, {
+      headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY },
+    });
+    if (!adminRes.ok) return respond('Account not found in auth. Ask your officer to check your profile.');
+    const { email } = await adminRes.json();
+
+    // Verify password via sign-in
+    const signIn = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SERVICE_KEY },
+      body: JSON.stringify({ email, password: opts.password }),
+    });
+    if (!signIn.ok) return respond('Incorrect password. Try again.');
+
+    await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${player.id}`, {
       method: 'PATCH',
       headers: sb.headers,
       body: JSON.stringify({ discord_id: discordId }),
     });
-    return respond(`Linked to **${players[0].full_name}**. You can now use \`/stats\` without a name.`);
+    return respond(`Linked to **${player.full_name}**. Bot commands now apply to your account.`);
   }
 
   return respond('Unknown command.');
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
-  if (!PUBLIC_KEY) return res.status(500).json({ error: 'DISCORD_PUBLIC_KEY not set' });
+  try {
+    if (req.method !== 'POST') return res.status(405).end();
+    if (!PUBLIC_KEY) return res.status(500).json({ error: 'DISCORD_PUBLIC_KEY not set' });
 
-  const sig = req.headers['x-signature-ed25519'];
-  const ts  = req.headers['x-signature-timestamp'];
-  const raw = await getRawBody(req);
+    const sig = req.headers['x-signature-ed25519'];
+    const ts  = req.headers['x-signature-timestamp'];
+    const raw = await getRawBody(req);
 
-  if (!sig || !ts || !verify(sig, ts, raw)) {
-    return res.status(401).json({ error: 'Invalid signature' });
+    if (!sig || !ts || !await verify(sig, ts, raw)) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    const interaction = JSON.parse(raw);
+
+    if (interaction.type === 1) {
+      return res.status(200).json({ type: 1 });
+    }
+
+    if (interaction.type === 2) {
+      const response = await handleCommand(interaction);
+      return res.status(200).json(response);
+    }
+
+    return res.status(400).json({ error: 'Unknown interaction type' });
+  } catch (e) {
+    console.error('Handler error:', e.message);
+    return res.status(500).json({ error: e.message });
   }
-
-  const interaction = JSON.parse(raw);
-
-  // Discord PING — must respond immediately
-  if (interaction.type === 1) {
-    return res.status(200).json({ type: 1 });
-  }
-
-  // Slash command
-  if (interaction.type === 2) {
-    const response = await handleCommand(interaction);
-    return res.status(200).json(response);
-  }
-
-  return res.status(400).json({ error: 'Unknown interaction type' });
 }

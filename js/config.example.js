@@ -6,7 +6,7 @@
 const SUPABASE_URL  = 'https://YOUR_PROJECT_ID.supabase.co';
 const SUPABASE_ANON = 'YOUR_ANON_PUBLIC_KEY';
 
-// Default goals shown before a coach sets individual ones
+// Default goals shown before an officer sets individual ones
 const DEFAULT_DAILY_MIN  = 90;   // minutes
 const DEFAULT_WEEKLY_MIN = 630;  // minutes (7 × 90)
 

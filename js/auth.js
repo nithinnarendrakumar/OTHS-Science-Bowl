@@ -9,9 +9,9 @@ async function requireAuth(expectedRole) {
   const { data: profile } = await sb.from('profiles').select('id,full_name,role,specialties').eq('id', session.user.id).single();
   if (!profile) { await sb.auth.signOut(); window.location.href = 'index.html'; return null; }
 
-  if (expectedRole && profile.role !== expectedRole && profile.role !== 'coach') {
-    // coach can access student dashboard, but student cannot access coach
-    if (expectedRole === 'coach' && profile.role !== 'coach') {
+  if (expectedRole && profile.role !== expectedRole && profile.role !== 'officer') {
+    // officer can access student dashboard, but student cannot access coach
+    if (expectedRole === 'officer' && profile.role !== 'officer') {
       window.location.href = 'dashboard.html';
       return null;
     }

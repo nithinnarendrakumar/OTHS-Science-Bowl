@@ -9,12 +9,12 @@ async function init() {
   dashProfile = auth.profile;
   document.getElementById('hdr-name').textContent = dashProfile.full_name;
 
-  if (dashProfile.role === 'coach') {
-    document.getElementById('coach-view').classList.remove('hidden');
+  document.getElementById('student-view').classList.remove('hidden');
+  await initStudent();
+
+  if (dashProfile.role === 'officer') {
+    document.getElementById('officer-view').classList.remove('hidden');
     await initCoach();
-  } else {
-    document.getElementById('student-view').classList.remove('hidden');
-    await initStudent();
   }
 }
 
@@ -445,7 +445,7 @@ function setupCoachEvents() {
   });
 }
 
-async function coachRefresh() {
+async function officerRefresh() {
   document.getElementById('btn-refresh').textContent = '…';
   await renderLeaderboard();
   document.getElementById('btn-refresh').textContent = 'Refresh';

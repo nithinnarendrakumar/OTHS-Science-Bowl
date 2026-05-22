@@ -7,17 +7,18 @@ const commands = [
   new SlashCommandBuilder()
     .setName('link')
     .setDescription('Link your Discord account to your Science Bowl profile')
-    .addStringOption(o => o.setName('name').setDescription('Your full name as registered').setRequired(true)),
+    .addStringOption(o => o.setName('name').setDescription('Your full name as registered').setRequired(true))
+    .addStringOption(o => o.setName('password').setDescription('Your account password').setRequired(true)),
 
   new SlashCommandBuilder()
     .setName('log-meeting')
-    .setDescription('Create a meeting record (coach only)')
+    .setDescription('Create a meeting record (officer only)')
     .addStringOption(o => o.setName('date').setDescription('YYYY-MM-DD').setRequired(true))
     .addStringOption(o => o.setName('notes').setDescription('Optional notes').setRequired(false)),
 
   new SlashCommandBuilder()
     .setName('log-scores')
-    .setDescription('Log tossup stats for a player (coach only)')
+    .setDescription('Log tossup stats for a player (officer only)')
     .addStringOption(o => o.setName('date').setDescription('Meeting date YYYY-MM-DD').setRequired(true))
     .addStringOption(o => o.setName('player').setDescription('Player name (partial match)').setRequired(true))
     .addStringOption(o => o.setName('subject').setDescription('Subject').setRequired(true)
@@ -33,7 +34,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('notify')
-    .setDescription('Send a message to the reminders channel (coach only)')
+    .setDescription('Send a message to the reminders channel (officer only)')
     .addStringOption(o => o.setName('message').setDescription('Message to send').setRequired(true)),
 ].map(c => c.toJSON());
 

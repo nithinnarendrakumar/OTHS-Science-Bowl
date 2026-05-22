@@ -1,5 +1,5 @@
 // POST /api/notify — sends a message to the Discord reminders webhook
-// Requires a valid Supabase session token from a coach account.
+// Requires a valid Supabase session token from an officer account.
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return res.status(500).json({ error: 'Discord webhook not configured.' });
 
-  // Verify caller is a coach via Supabase JWT
+  // Verify caller is an officer via Supabase JWT
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   const user = await userRes.json();
 
   const profileRes = await fetch(
-    `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&role=eq.coach&select=id`,
+    `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&role=eq.officer&select=id`,
     { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } }
   );
   const profiles = await profileRes.json();

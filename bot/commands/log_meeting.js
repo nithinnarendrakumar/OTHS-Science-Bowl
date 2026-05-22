@@ -3,7 +3,7 @@ const { SlashCommandBuilder } = require('discord.js');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('log-meeting')
-    .setDescription('Create a new meeting record (coach only)')
+    .setDescription('Create a new meeting record (officer only)')
     .addStringOption(o =>
       o.setName('date').setDescription('Meeting date (YYYY-MM-DD)').setRequired(true))
     .addStringOption(o =>
@@ -15,8 +15,8 @@ module.exports = {
     const { data: caller } = await sb.from('profiles')
       .select('id, role').eq('discord_id', interaction.user.id).single();
 
-    if (!caller || caller.role !== 'coach') {
-      return interaction.editReply('Only coaches can log meetings. Link your account with `/link` if you haven\'t.');
+    if (!caller || caller.role !== 'officer') {
+      return interaction.editReply('Only officeres can log meetings. Link your account with `/link` if you haven\'t.');
     }
 
     const date  = interaction.options.getString('date');

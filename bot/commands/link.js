@@ -18,7 +18,7 @@ module.exports = {
       .limit(5);
 
     if (!profiles?.length) {
-      return interaction.editReply(`No profile found matching "${name}". Ask your coach to check your name in the system.`);
+      return interaction.editReply(`No profile found matching "${name}". Ask your officer to check your name in the system.`);
     }
     if (profiles.length > 1) {
       return interaction.editReply(`Multiple matches: ${profiles.map(p => p.full_name).join(', ')}. Be more specific.`);
